@@ -8,13 +8,38 @@ CTO**. Destined to be absorbed into [Haven](https://github.com/BrookHavenTax/hav
 
 ## Will — start here
 
-1. Clone this repo and open **Claude Code** inside the folder.
-2. Copy **everything below the horizontal line** and paste it into Claude Code as your
-   first message. All of it, one paste.
-   *(Easiest way to copy it cleanly: click the "Raw" button at the top of this file on
-   GitHub, then select all and copy. Or just open `README.md` in the cloned folder.)*
-3. Answer its questions about the trust. It will have several — that's the point.
-4. Review the schema it proposes, in plain English, and approve it before it builds.
+### One time only — do this with the CTO, about 10 minutes
+
+You need four things on your Mac: **Claude Code**, **Git**, **Node**, and to be **signed
+in to GitHub**. That last one matters because this repo is private — without it, the clone
+in step 1 just fails with a confusing error.
+
+Ask the CTO to sit with you (or screen-share) for ten minutes and get all four installed
+and signed in. Do not fight this alone; it is the only genuinely fiddly part of the whole
+project, and it never has to be done again.
+
+### Every time
+
+**1. Get the code onto your laptop.** Open Terminal and paste this one line:
+
+```bash
+gh repo clone BrookHavenTax/tki-trust-admin ~/Projects/tki-trust-admin
+```
+
+**2. Open Claude Code *inside* `~/Projects/tki-trust-admin`** — the folder itself, not the
+folder above it. This matters: the project's safety rules only load when Claude is opened
+in the repo folder.
+
+**3. Paste the prompt.** Copy **everything below the horizontal line** on this page and
+paste it into Claude Code as your first message. All of it, one paste. Easiest clean copy:
+click the **Raw** button at the top of this file on GitHub, select all, copy.
+
+**4. Answer its questions about the trust.** It will have several — that's the point.
+
+**5. Review the schema it proposes**, in plain English, and approve it before it builds.
+
+After the first session, you don't re-paste anything. Just open Claude Code in the folder
+and say *"read CLAUDE.md and .claude/handoff.md, then tell me where we left off."*
 
 **Your job is checking its understanding of the trust, not its code.** You're the only
 person on this project who knows whether "the addendum is expressly incorporated" has been
@@ -22,8 +47,11 @@ read correctly. That's worth more than any technical review.
 
 **Three things to never do:** give it a real file or scan (the records contain minors'
 Social Security numbers), point it at the shared archive folder, or let it talk you into a
-workaround when it says it needs a database. Databases, deployment, Dropbox and QuickBooks
-are all the CTO's — just say "the CTO handles that" and move on.
+workaround when it says it needs a database. Databases, deployment, the Google Gemini API
+key, Dropbox and QuickBooks are all the CTO's — just say "the CTO handles that" and move on.
+
+The tool does read scanned documents, using Google Gemini — but in this phase it only ever
+reads **practice scans it generated itself**, never a real file from the archive.
 
 Useful things to say: *"Explain that in plain English."* · *"That's wrong — in the master
 trust, X actually means Y."* · *"Stop, let's finish what we started before adding
@@ -82,12 +110,14 @@ command is a package install (`npm`/`pnpm`/`yarn`/`bun` + `i`/`add`/`install`) o
 
 - a datastore: prisma, `@prisma/*`, typeorm, drizzle-orm, drizzle-kit, sequelize, knex,
   mongoose, better-sqlite3, sqlite3, `pg`, mysql2, mongodb, kysely, redis, ioredis
-- an OCR/vision engine: tesseract, `@google-cloud/vision`, textract, paddleocr, ocrad
+- an off-standard OCR engine: tesseract, `@google-cloud/vision`, textract, paddleocr, ocrad
+  — **Google Gemini is the house standard for document scanning at BrookHaven** (§4f), so
+  the Gemini SDK is explicitly permitted and everything else is not
 
 The stderr message must tell the reader to escalate to the CTO rather than work around it.
 Everything else exits 0. **Then test it** and show Will the results: `pnpm add prisma`,
 `npm install better-sqlite3`, `yarn add pg`, `pnpm add tesseract.js` must all block;
-`pnpm add zod`, `pnpm install`, `pnpm test`, `grep -r prisma .`, and
+`pnpm add zod`, the Gemini SDK, `pnpm install`, `pnpm test`, `grep -r prisma .`, and
 `git commit -m "repository interface for postgres later"` must all pass. Guardrails you
 haven't tested are decoration.
 
@@ -254,17 +284,57 @@ yourself writing one, that is the bug.
 
 ### 4e. Adapters — interfaces here, fixtures in `apps/api`
 
-Define as interfaces in `trust-core`, one fixture-backed implementation each in `apps/api`:
-`DocumentExtractor` · `AccountRepository` · `CustodialStatementSource` · `LedgerSource` ·
-`ArchiveSource`.
+Define as interfaces in `trust-core`, implemented in `apps/api`: `DocumentExtractor` ·
+`AccountRepository` · `CustodialStatementSource` · `LedgerSource` · `ArchiveSource`.
+
+All of them get a fixture-backed implementation. `DocumentExtractor` additionally gets a
+real one — see §4f.
 
 **`AccountRepository` is where a database goes later.** For now: a JSON-file-backed
 implementation reading `fixtures/`. That satisfies the no-database rule while leaving the
 CTO a clean seam.
 
-**`DocumentExtractor` is stubbed in v1** — return hand-authored fixture output. No Tesseract,
-no OCR or vision API, no real scan. Real extraction is CTO-assigned phase-2 work, because it
-decides where minors' data is permitted to travel.
+### 4f. Document scanning — Google Gemini, the BrookHaven house standard
+
+The source scans have no text layer, so extraction is real scope. BrookHaven uses **Google
+Gemini** for document scanning on its other projects; match that, and do not introduce a
+different engine.
+
+**Before you write any of it, ask the CTO — through Will — for the exact Gemini model ID
+and SDK package the other BrookHaven projects use, and match them.** Do not guess a model
+ID from memory; they go stale and consistency with the existing projects is the actual
+requirement here.
+
+Build **two** implementations of `DocumentExtractor`:
+
+- **`FixtureDocumentExtractor`** — reads hand-authored candidate output from `fixtures/`.
+  Offline, deterministic. **This is the default, and it is what every unit test uses.** The
+  green bar must never depend on a network call or an API key.
+- **`GeminiDocumentExtractor`** — the real one. Sends page images and returns candidates.
+
+The strong fit with §4b: **do not ask Gemini for raw text and then parse it.** Ask it for
+structured output matching the account schema, and require it to return, for every field,
+the **page number** and the **exact quoted text** it read the value from. Those map straight
+onto `SourceRef`, so provenance is populated by the extraction itself rather than
+reconstructed afterwards. Map model uncertainty onto the `confidence` field, and any field
+it cannot locate must come back `confidence: 'unread'` with `source: null` — **never a
+guess**. A confident wrong answer on `addendumExpresslyIncorporated` is the single most
+damaging thing this tool could produce.
+
+Everything Gemini returns is `enteredBy: 'extractor'` and lands in the intake review screen
+for Will to confirm or correct. Nothing it extracts is ever treated as settled.
+
+Rules for the integration:
+
+- API key from an environment variable, read through config, **never committed** — `.env` is
+  already gitignored, and `.env.example` documents the variable name with no value.
+- Its integration test is skipped by default and runs only when the key is present. It runs
+  against **synthetic scans**, never real ones.
+- Handle the failure paths explicitly: rate limits, timeouts, malformed structured output,
+  and partial extraction. A failed scan surfaces as a `gap` finding, never as a silent empty
+  record.
+- **In this prototype it only ever sees synthetic documents.** Pointing it at the real
+  archive is a separate, CTO-authorized step — see §6.
 
 ## 5. Scope of v1 — build exactly this, then stop
 
@@ -273,9 +343,16 @@ decides where minors' data is permitted to travel.
 2. `fixtures/` — **31 synthetic accounts**, deliberately varied: some with addenda, some
    without, some with court orders, several carrying the exact conflicts §4d detects, some
    missing admin items. The fixtures are the test surface — make them exercise the rules.
-3. `apps/api` — NestJS, feature-module-per-domain matching Haven's `apps/api/src` layout.
+3. **Synthetic scans** — generate scan-like PDFs/images from a handful of those fixture
+   accounts (`fixtures/**/*.synthetic.pdf`, already whitelisted in `.gitignore`). Make them
+   realistically awkward: skew, noise, a signature block, a stamped exhibit number. These
+   are what the Gemini extractor is developed and tested against. Clean synthetic documents
+   prove nothing.
+4. **`GeminiDocumentExtractor`** per §4f, plus the `FixtureDocumentExtractor` the test suite
+   runs on.
+5. `apps/api` — NestJS, feature-module-per-domain matching Haven's `apps/api/src` layout.
    Read endpoints for accounts and findings, plus intake-review write endpoints.
-4. `apps/web` — Next.js 16 App Router:
+6. `apps/web` — Next.js 16 App Router:
    - account list with a findings-count column
    - account detail — every field showing its source citation
    - **intake review screen** — field-by-field confirm/correct against the extractor's
@@ -283,11 +360,14 @@ decides where minors' data is permitted to travel.
    - findings panel with an explicit human escalate/resolve action
 
 **Out — do not build, even if asked mid-session:** the distribution-request memo generator ·
-the calendar view · real OCR · real Dropbox / QuickBooks / custodial feeds · auth beyond a
-hardcoded dev user · any database · any deployment or CI beyond typecheck/lint/test.
+the calendar view · **extraction run against the real archive** (the extractor is built and
+proven on synthetic scans only — pointing it at real documents is a separate CTO-authorized
+step) · real Dropbox / QuickBooks / custodial feeds · auth beyond a hardcoded dev user ·
+any database · any deployment or CI beyond typecheck/lint/test.
 
-The intake **review surface** is the durable half of the workflow and is fully buildable
-against fixtures. That is why it is sequenced first.
+The intake **review surface** is the durable half of the workflow — it is what makes the
+extractor's output safe to rely on, and it survives regardless of how the extraction is
+done. Build it properly, not as an afterthought to the scanning.
 
 ## 6. Hard rules
 
@@ -296,6 +376,10 @@ against fixtures. That is why it is sequenced first.
    and home addresses**. Never read the mounted shared archive. Never ask Will for a real
    document. Never copy real data into this repo — not even one file "just to test the
    parser." All fixtures are invented: fake names, fake addresses, fake SSNs.
+   **This extends to the extractor: only synthetic documents are ever sent to Gemini from
+   this repo.** Running extraction over the real archive is a CTO-authorized step outside
+   this prototype — it is the moment real minors' data leaves the building, and it is not a
+   decision that gets made mid-session by you or by Will.
 3. **Full SSNs are never stored.** The schema holds `ssnLast4` only, as a branded type. If
    Haven later needs the full value, that lives in Haven's encrypted store.
 4. **No PII in logs, URLs, route params, or query strings — ever.** Route by opaque
@@ -332,8 +416,10 @@ against fixtures. That is why it is sequenced first.
 3. **The schema only** — `packages/trust-core/src/schema.ts` plus a plain-English summary of
    every field and every rule you intend to implement. **Stop and get his explicit
    approval.** This is the part he has to specify, cheap to change now and expensive later.
-4. Then build §5 in order — trust-core → fixtures → API → web — checking in after each, with
-   the app runnable at every checkpoint.
+4. Then build §5 in order — **trust-core → fixtures + synthetic scans → Gemini extractor →
+   API → web** — checking in after each, with the app runnable at every checkpoint. Get the
+   Gemini model ID and SDK from the CTO (§4f) before starting the extractor step, and get
+   the API key from him too; do not ask Will for either.
 
 At the end of every session, write `.claude/handoff.md` (what landed, what is stubbed, what
 the CTO must wire up) and give Will a short prompt he can paste into a fresh session to

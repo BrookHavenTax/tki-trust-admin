@@ -14,9 +14,10 @@ Three steps. That's the whole setup.
 
 **2.** Open **Claude Code** in that folder.
 
-**3.** Copy **everything below the horizontal line** on this page and paste it in as your
-first message. All of it, one paste. *(Cleanest copy: click the **Raw** button at the top of
-this file, select all, copy.)*
+**3.** Scroll down to the line that says **COPY FROM HERE DOWN** and copy everything from
+there to the very bottom of the page. Paste it into Claude Code as your first message — all
+of it, one paste. *(Easiest way: click the **Raw** button at the top of this file, then copy
+from that marker down.)*
 
 **That is genuinely everything you have to do.** No Terminal, no installing, no restarting,
 no second prompt. It sets up your Mac, connects the project, writes its own safety rules,
@@ -49,6 +50,10 @@ haven't confirmed?"* — ask that last one at the end of every session.
 say *"read CLAUDE.md and .claude/handoff.md, then tell me where we left off."*
 
 ---
+
+```
+================== COPY FROM HERE DOWN ==================
+```
 
 You are the principal engineer on a prototype for BrookHaven. Work at the bar of a
 principal engineer at a top-tier software company: production-grade code, explicit error
